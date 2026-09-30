@@ -1,0 +1,46 @@
+[
+  {
+    "id": "exp_001",
+    "vehicle": "Benin-ColdTruck-01",
+    "route": "Abomey -> Bohicon",
+    "scenario": "normal",
+    "duration_min": 240,
+    "alert_count": 0,
+    "sms_count": 0,
+    "min_mtt": 240.0,
+    "ended_at": "2026-09-28T16:00:00Z"
+  },
+  {
+    "id": "exp_002",
+    "vehicle": "Benin-ColdTruck-01",
+    "route": "Bohicon -> Cov\u00e8",
+    "scenario": "solar_burst",
+    "duration_min": 180,
+    "alert_count": 3,
+    "sms_count": 1,
+    "min_mtt": 12.5,
+    "ended_at": "2026-09-29T11:30:00Z"
+  },
+  {
+    "id": "exp_003",
+    "vehicle": "Moto-ColdBox-02",
+    "route": "Cov\u00e8 -> Dasso",
+    "scenario": "lid_open",
+    "duration_min": 90,
+    "alert_count": 5,
+    "sms_count": 2,
+    "min_mtt": 4.2,
+    "ended_at": "2026-09-29T15:00:00Z"
+  },
+  {
+    "id": "exp_004",
+    "vehicle": "Moto-ColdBox-02",
+    "route": "Dasso -> Za-Kpota",
+    "scenario": "recovery",
+    "duration_min": 300,
+    "alert_count": 2,
+    "sms_count": 0,
+    "min_mtt": 18.0,
+    "ended_at": "2026-09-30T09:15:00Z"
+  }
+]

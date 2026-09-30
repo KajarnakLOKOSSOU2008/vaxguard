@@ -1,0 +1,26 @@
+{
+  "raw_csv": "/home/z/my-project/download/data/vaxguard_thermal_dataset.csv",
+  "train_npz": "/home/z/my-project/download/data/vaxguard_train.npz",
+  "n_raw_rows": 156000,
+  "n_train_samples": 47520,
+  "window_size": 30,
+  "n_features": 3,
+  "scenarios": [
+    "normal",
+    "solar_burst",
+    "lid_open",
+    "ac_failure",
+    "recovery"
+  ],
+  "sampling_interval_s": 30.0,
+  "t_destruction_c": 8.0,
+  "stats": {
+    "y_mtt_mean": 209.06884765625,
+    "y_mtt_std": 386.89324951171875,
+    "risk_class_counts": {
+      "0": 17353,
+      "1": 1232,
+      "2": 28935
+    }
+  }
+}
