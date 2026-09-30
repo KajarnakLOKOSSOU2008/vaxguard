@@ -33,12 +33,20 @@ from pydantic import BaseModel
 
 # --- Paths ---
 PROJECT_ROOT = "/home/z/my-project"
-MODEL_TS_PATH = os.path.join(PROJECT_ROOT, "download/models/vaxguard_cnn_gru_ts.pt")
-MODEL_INT8_PATH = os.path.join(PROJECT_ROOT, "download/models/vaxguard_cnn_gru_int8.pt")
-SCALER_PATH = os.path.join(PROJECT_ROOT, "download/models/scaler.npy")
-MANIFEST_PATH = os.path.join(PROJECT_ROOT, "download/models/model_manifest.json")
-DATA_CSV = os.path.join(PROJECT_ROOT, "download/data/vaxguard_thermal_dataset.csv")
+MODEL_TS_PATH = os.path.join(PROJECT_ROOT, "download/models/vaxguard_cnn_gru_real_ts.pt")
+MODEL_INT8_PATH = os.path.join(PROJECT_ROOT, "download/models/vaxguard_cnn_gru_real_int8.pt")
+SCALER_PATH = os.path.join(PROJECT_ROOT, "download/models/scaler_real.npy")
+MANIFEST_PATH = os.path.join(PROJECT_ROOT, "download/models/model_manifest_real.json")
+DATA_CSV = os.path.join(PROJECT_ROOT, "download/data/vaxguard_real_dataset.csv")
 DB_PATH = os.path.join(PROJECT_ROOT, "mini-services/ai-service/vaxguard_history.json")
+
+# Gemma 2B integration (lazy import to avoid loading the 1.4GB model at startup)
+try:
+    from gemma_analyzer import analyze as gemma_analyze, info as gemma_info, is_available as gemma_available
+    GEMMA_AVAILABLE = gemma_available()
+except Exception as e:
+    print(f"[gemma] not available: {e}")
+    GEMMA_AVAILABLE = False
 
 PORT = 8001
 WINDOW = 30  # 30 steps = 15 min simulated mission
@@ -170,8 +178,10 @@ class LiveSession:
     history_buffer: List[Dict[str, Any]] = field(default_factory=list)  # last N readings
     predictions_log: List[Dict[str, Any]] = field(default_factory=list)
     sms_log: List[Dict[str, Any]] = field(default_factory=list)
+    gemma_log: List[Dict[str, Any]] = field(default_factory=list)  # LLM analyses history
     alerts_state: str = "normal"  # normal | warning | critical | sms_sent
     last_alert_at_sim_s: Optional[int] = None  # simulated mission seconds when alert triggered
+    last_gemma_at_sim_s: int = 0  # last time Gemma ran
     vehicle_route_progress: float = 0.0  # 0..1 along route
     vehicle_lat: float = ROUTE_WAYPOINTS[0][0]
     vehicle_lng: float = ROUTE_WAYPOINTS[0][1]
@@ -180,6 +190,7 @@ class LiveSession:
     sms_delay_s: int = 300  # 5 min
     sensor_interval_s: int = 30  # SHT31 cadence
     demo_speed: float = 1.0  # 1 step = 1 real second; each step = 30 simulated sec
+    gemma_lang: str = "fr"  # default language for analyses
 
 
 SESSION = LiveSession()
@@ -396,6 +407,12 @@ async def simulation_loop():
                 prediction = run_prediction(SESSION)
                 # Check alerts
                 events = check_and_alert(SESSION, prediction) if prediction.get("ready") else None
+                # Auto-run Gemma 2B analysis on critical/warning transitions (background)
+                if GEMMA_AVAILABLE and prediction.get("ready"):
+                    try:
+                        await maybe_run_gemma_auto(SESSION, prediction)
+                    except Exception as e:
+                        print(f"[gemma] auto trigger error: {e}")
                 # Log prediction for history
                 if prediction.get("ready"):
                     SESSION.predictions_log.append({
@@ -413,6 +430,7 @@ async def simulation_loop():
                     "prediction": prediction,
                     "alert_state": SESSION.alerts_state,
                     "events": events or [],
+                    "gemma_log": SESSION.gemma_log[-3:],
                     "session": {
                         "scenario": SESSION.scenario,
                         "step": SESSION.step,
@@ -422,6 +440,9 @@ async def simulation_loop():
                         "sensor_interval_s": SESSION.sensor_interval_s,
                         "history_buffer_size": len(SESSION.history_buffer),
                         "sms_count": len(SESSION.sms_log),
+                        "gemma_available": GEMMA_AVAILABLE,
+                        "gemma_count": len(SESSION.gemma_log),
+                        "gemma_lang": SESSION.gemma_lang,
                     },
                 }
                 # Serialize safely (numpy float64 -> Python float)
@@ -474,8 +495,10 @@ async def info():
         "int8_metrics": MANIFEST.get("int8_metrics"),
         "sizes_kb": MANIFEST.get("size_kb"),
         "esp32_feasibility": MANIFEST.get("esp32_feasibility"),
+        "data_provenance": MANIFEST.get("data_provenance"),
         "threshold_c": T_DESTRUCTION,
         "window_size": WINDOW,
+        "gemma": gemma_info() if GEMMA_AVAILABLE else {"available": False, "model_name": "Gemma 2B"},
     }
 
 
@@ -649,6 +672,119 @@ async def save_expedition(req: Request):
     return {"status": "ok", "total": len(db)}
 
 
+# ====================== Gemma 2B endpoints ======================
+
+@app.get("/api/gemma/info")
+async def gemma_status():
+    """Return Gemma 2B model info + availability."""
+    return gemma_info() if GEMMA_AVAILABLE else {"available": False, "model_name": "Gemma 2B"}
+
+
+@app.get("/api/gemma/log")
+async def gemma_log():
+    """Return list of past Gemma analyses."""
+    return {"log": SESSION.gemma_log[-20:], "total": len(SESSION.gemma_log)}
+
+
+class GemmaReq(BaseModel):
+    lang: str = "fr"
+    force: bool = False
+
+
+@app.post("/api/gemma/analyze")
+async def gemma_trigger(req: GemmaReq):
+    """Trigger a Gemma 2B analysis on the latest prediction + reading.
+    Returns cached result if analyzed within the last 5 min (unless force=True)."""
+    if not GEMMA_AVAILABLE:
+        raise HTTPException(503, "Gemma 2B not available")
+    if not SESSION.predictions_log or not SESSION.history_buffer:
+        raise HTTPException(400, "no prediction available yet (warmup)")
+    # Cache check (5 min = 300 real seconds = lots in sim time)
+    if not req.force and SESSION.gemma_log:
+        last = SESSION.gemma_log[-1]
+        import time as _time
+        if _time.time() - last.get("timestamp", 0) < 300:
+            return {"status": "cached", "analysis": last}
+
+    pred = SESSION.predictions_log[-1]
+    reading = SESSION.history_buffer[-1]
+    result = gemma_analyze(pred, reading, SESSION.scenario,
+                            SESSION.threshold_c, req.lang)
+    result["scenario"] = SESSION.scenario
+    result["step"] = SESSION.step
+    SESSION.gemma_log.append(result)
+    if len(SESSION.gemma_log) > 20:
+        SESSION.gemma_log = SESSION.gemma_log[-20:]
+    # Broadcast to WS clients
+    msg = {"type": "gemma_analysis", "analysis": result}
+    msg_str = safe_json_dumps(msg)
+    dead = []
+    for ws in CLIENTS:
+        try:
+            await ws.send_text(msg_str)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in CLIENTS:
+            CLIENTS.remove(ws)
+    return {"status": "ok", "analysis": result}
+
+
+@app.post("/api/gemma/lang")
+async def gemma_set_lang(req: GemmaReq):
+    """Set default language for auto-analyses."""
+    SESSION.gemma_lang = req.lang if req.lang in ("fr", "en") else "fr"
+    return {"gemma_lang": SESSION.gemma_lang}
+
+
+async def maybe_run_gemma_auto(session: LiveSession, prediction: Dict[str, Any]):
+    """Auto-trigger Gemma analysis on critical alert transitions (in background).
+
+    Triggered when:
+    - State transitions to critical
+    - OR every 10 simulated minutes during warning/critical state
+    """
+    if not GEMMA_AVAILABLE:
+        return None
+    if not prediction.get("ready"):
+        return None
+    if not session.history_buffer:
+        return None
+
+    # Throttle: only run if last analysis > 600 simulated seconds ago (10 min sim)
+    sim_since_last = session.t_seconds - session.last_gemma_at_sim_s
+    should_run = False
+
+    if session.alerts_state == "critical" and sim_since_last >= 600:
+        should_run = True
+    elif session.alerts_state == "warning" and sim_since_last >= 1800:
+        should_run = True
+
+    if not should_run:
+        return None
+
+    session.last_gemma_at_sim_s = session.t_seconds
+
+    # Run in background thread (Gemma inference is blocking, takes ~90s on CPU)
+    import threading
+    def _run():
+        try:
+            reading = session.history_buffer[-1]
+            result = gemma_analyze(prediction, reading, session.scenario,
+                                    session.threshold_c, session.gemma_lang)
+            result["scenario"] = session.scenario
+            result["step"] = session.step
+            result["auto"] = True
+            session.gemma_log.append(result)
+            if len(session.gemma_log) > 20:
+                session.gemma_log = session.gemma_log[-20:]
+        except Exception as e:
+            print(f"[gemma] auto analysis failed: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return None
+
+
 @app.get("/api/download")
 async def download(type: str = "manifest"):
     """Serve model files for download."""
@@ -705,6 +841,7 @@ async def stream(ws: WebSocket):
         "reading": SESSION.history_buffer[-1] if SESSION.history_buffer else None,
         "history": SESSION.history_buffer[-200:],
         "predictions": SESSION.predictions_log[-200:],
+        "gemma_log": SESSION.gemma_log[-5:],
         "session": {
             "scenario": SESSION.scenario,
             "step": SESSION.step,
@@ -713,6 +850,8 @@ async def stream(ws: WebSocket):
             "sms_delay_s": SESSION.sms_delay_s,
             "alert_state": SESSION.alerts_state,
             "sms_count": len(SESSION.sms_log),
+            "gemma_available": GEMMA_AVAILABLE,
+            "gemma_lang": SESSION.gemma_lang,
         },
         "dispensaires": DISPENSAIRES,
         "route": [{"lat": la, "lng": ln} for la, ln in ROUTE_WAYPOINTS],

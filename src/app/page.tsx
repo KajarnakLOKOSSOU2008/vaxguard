@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Activity, Brain, MapPin, MessageSquare, History as HistoryIcon,
-  Settings, Cpu,
+  Settings, Cpu, Sparkles,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Header } from "@/components/vaxguard/header";
@@ -14,6 +14,7 @@ import { SmsAlerts } from "@/components/vaxguard/sms-alerts";
 import { HistoryPanel } from "@/components/vaxguard/history";
 import { DeviceConfig } from "@/components/vaxguard/device-config";
 import { AiInfo } from "@/components/vaxguard/ai-info";
+import { GemmaPanel } from "@/components/vaxguard/gemma-panel";
 import { useVaxGuardStream } from "@/hooks/use-vaxguard-stream";
 import { type Lang } from "@/lib/i18n";
 
@@ -23,7 +24,7 @@ export default function Home() {
     const saved = localStorage.getItem("vaxguard-lang");
     return saved === "fr" || saved === "en" ? saved : "fr";
   });
-  const { state, setScenario, toggleRunning, dispatchSms, configure } = useVaxGuardStream();
+  const { state, setScenario, toggleRunning, dispatchSms, configure, triggerGemma } = useVaxGuardStream();
 
   useEffect(() => {
     localStorage.setItem("vaxguard-lang", lang);
@@ -56,30 +57,34 @@ export default function Home() {
         )}
 
         <Tabs defaultValue="live" className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 h-auto">
+          <TabsList className="mb-4 grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 h-auto">
             <TabsTrigger value="live" className="flex items-center gap-1.5 py-2">
               <Activity className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Monitoring live" : "Live"}
+              {lang === "fr" ? "Live" : "Live"}
             </TabsTrigger>
             <TabsTrigger value="prediction" className="flex items-center gap-1.5 py-2">
               <Brain className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Prédiction IA" : "Prediction"}
+              {lang === "fr" ? "Prédiction" : "Prediction"}
             </TabsTrigger>
             <TabsTrigger value="map" className="flex items-center gap-1.5 py-2">
               <MapPin className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Carte GPS" : "GPS map"}
+              {lang === "fr" ? "Carte" : "Map"}
             </TabsTrigger>
             <TabsTrigger value="sms" className="flex items-center gap-1.5 py-2">
               <MessageSquare className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Alertes SMS" : "SMS alerts"}
+              {lang === "fr" ? "SMS" : "SMS"}
+            </TabsTrigger>
+            <TabsTrigger value="gemma" className="flex items-center gap-1.5 py-2">
+              <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+              {lang === "fr" ? "Gemma 2B" : "Gemma 2B"}
             </TabsTrigger>
             <TabsTrigger value="config" className="flex items-center gap-1.5 py-2">
               <Settings className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Configuration" : "Config"}
+              {lang === "fr" ? "Config" : "Config"}
             </TabsTrigger>
             <TabsTrigger value="ai" className="flex items-center gap-1.5 py-2">
               <Cpu className="h-3.5 w-3.5" />
-              {lang === "fr" ? "Modèle & ESP32" : "Model & ESP32"}
+              {lang === "fr" ? "Modèle" : "Model"}
             </TabsTrigger>
           </TabsList>
 
@@ -170,6 +175,19 @@ export default function Home() {
             />
           </TabsContent>
 
+          {/* GEMMA TAB */}
+          <TabsContent value="gemma" className="space-y-4">
+            <GemmaPanel
+              lang={lang}
+              gemmaLog={state.gemmaLog}
+              gemmaInfo={state.gemmaInfo}
+              gemmaAnalyzing={state.gemmaAnalyzing}
+              onTrigger={triggerGemma}
+              currentScenario={state.currentScenario}
+              alertState={state.session?.alert_state ?? "normal"}
+            />
+          </TabsContent>
+
           {/* CONFIG TAB */}
           <TabsContent value="config" className="space-y-4">
             <DeviceConfig
@@ -192,17 +210,22 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="mt-8 pt-6 border-t border-teal-200/30 text-center text-xs text-slate-500">
-          <div className="flex flex-col md:flex-row items-center justify-center gap-2">
+          <div className="flex flex-col md:flex-row items-center justify-center gap-2 flex-wrap">
             <span className="font-semibold text-teal-700">VaxGuard</span>
             <span className="text-slate-400">·</span>
-            <span>{lang === "fr" ? "Cold-chain prédictive Edge-AI" : "Predictive Edge-AI cold-chain"}</span>
+            <span>{lang === "fr" ? "Cold-chain prédictive Edge-AI + Small IA LLM" : "Predictive Edge-AI cold-chain + Small IA LLM"}</span>
             <span className="text-slate-400">·</span>
-            <span>CNN-GRU PyTorch · INT8 16.9 KB · ESP32-S3 ready</span>
+            <span>CNN-GRU INT8 17.2 KB · Gemma 2B IQ3_M 1.3 GB · ESP32-S3 ready</span>
           </div>
           <div className="mt-1 text-[10px] text-slate-400">
             {lang === "fr"
-              ? "Données synthétiques basées sur physique thermodynamique de glacière passive · capteurs SHT31 simulés"
-              : "Synthetic data based on passive cooler thermodynamics · simulated SHT31 sensors"}
+              ? "Données météo RÉELLES Bénin (Open-Meteo, août-septembre 2026) + simulation physique glacière passive"
+              : "REAL Bénin weather data (Open-Meteo, Aug-Sep 2026) + passive cooler physics simulation"}
+          </div>
+          <div className="mt-1 text-[10px] text-violet-500">
+            {lang === "fr"
+              ? "Hackathon Small IA — Banque Mondiale"
+              : "Small IA Hackathon — World Bank"}
           </div>
         </footer>
       </main>

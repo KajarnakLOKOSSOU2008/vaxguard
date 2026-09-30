@@ -63,7 +63,7 @@ export interface SessionState {
 }
 
 export interface StreamMessage {
-  type: "tick" | "snapshot";
+  type: "tick" | "snapshot" | "gemma_analysis";
   reading?: Reading;
   prediction?: Prediction;
   alert_state?: string;
@@ -71,9 +71,26 @@ export interface StreamMessage {
   session?: SessionState;
   history?: Reading[];
   predictions?: any[];
+  gemma_log?: GemmaAnalysis[];
   dispensaires?: Dispensary[];
   route?: { lat: number; lng: number }[];
   vehicle?: { lat: number; lng: number; nearest: Dispensary | null };
+  analysis?: GemmaAnalysis;
+}
+
+export interface GemmaAnalysis {
+  ready?: boolean;
+  analysis?: string;
+  inference_time_s?: number;
+  tokens_prompt?: number;
+  tokens_completion?: number;
+  model?: string;
+  lang?: string;
+  timestamp?: number;
+  scenario?: string;
+  step?: number;
+  auto?: boolean;
+  error?: string;
 }
 
 export interface ModelInfo {
@@ -172,4 +189,11 @@ export const VaxGuardClient = {
   smsLog: () => getJson<{ log: any[]; total: number }>(`/api/sms/log`),
   history: () => getJson<{ readings: Reading[]; predictions: any[]; session: any }>(`/api/history`),
   expeditions: () => getJson<ExpeditionsResponse>(`/api/expeditions`),
+  // Gemma 2B
+  gemmaInfo: () => getJson<{ available: boolean; model_name: string; quantization?: string; size_mb?: number; loaded?: boolean }>(`/api/gemma/info`),
+  gemmaLog: () => getJson<{ log: any[]; total: number }>(`/api/gemma/log`),
+  gemmaAnalyze: (lang: string, force: boolean = false) =>
+    postJson<{ status: string; analysis: any }>(`/api/gemma/analyze`, { lang, force }),
+  gemmaSetLang: (lang: string) =>
+    postJson<{ gemma_lang: string }>(`/api/gemma/lang`, { lang }),
 };

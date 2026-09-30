@@ -36,7 +36,6 @@ yarn-error.log*
 # vercel
 .vercel
 
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -52,3 +51,22 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# VaxGuard — heavy model artifacts (download via scripts, don't commit)
+/download/llm/
+/download/data/*.npz
+*.gguf
+*.bin
+
+# Local AI service state
+/mini-services/ai-service/ai.log
+/mini-services/ai-service/vaxguard_history.json
+
+# Prisma SQLite
+/prisma/*.db
+/prisma/*.db-journal
+
+# OS / editor
+.idea/
+.vscode/
+*.swp
