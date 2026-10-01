@@ -70,3 +70,6 @@ server.log
 .idea/
 .vscode/
 *.swp
+
+# Temp tool-results
+/tool-results/
