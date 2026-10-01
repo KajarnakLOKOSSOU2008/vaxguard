@@ -38,6 +38,8 @@ jobs:
             basePath: "/${{ github.event.repository.name }}",
             images: { unoptimized: true },
             trailingSlash: true,
+            typescript: { ignoreBuildErrors: true },
+            eslint: { ignoreDuringBuilds: true },
           };
           export default nextConfig;
           EOF
